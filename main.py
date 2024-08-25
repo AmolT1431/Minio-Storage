@@ -3,6 +3,9 @@ from starlette.responses import StreamingResponse
 import httpx
 
 app = FastAPI()
+@app.get("/")
+async def get_system_name():
+    return {"massage: working"}
 
 @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy(full_path: str, request: Request):
@@ -17,7 +20,8 @@ async def proxy(full_path: str, request: Request):
             url=minio_url,
             headers=request.headers.raw,
             params=request.query_params,
-            content=await request.body()
+            content=await request.body(),
+            timeout=30.0
         )
 
         # Prepare the response to send back to the client
