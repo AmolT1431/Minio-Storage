@@ -1,39 +1,65 @@
-from fastapi import FastAPI, Request
-from starlette.responses import StreamingResponse
-import httpx
+from fastapi import FastAPI, UploadFile, File, HTTPException, Response
+from minio import Minio
+from minio.error import S3Error
+from io import BytesIO
 
 app = FastAPI()
-@app.get("/")
-async def get_system_name():
-    return {"massage: working"}
 
-@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def proxy(full_path: str, request: Request):
-    # The URL of the MinIO service
-    minio_url = f"http://10.220.93.64:45067/{full_path}"
+# Initialize MinIO client
+minio_client = Minio(
+    "192.168.43.100:9000",
+    access_key="atomictos",
+    secret_key="amolt1431",
+    secure=False
+)
 
-    # Create a new HTTPX client instance
-    async with httpx.AsyncClient() as client:
-        # Forward the request to MinIO
-        minio_response = await client.request(
-            method=request.method,
-            url=minio_url,
-            headers=request.headers.raw,
-            params=request.query_params,
-            content=await request.body(),
-            timeout=30.0
+bucket_name = "test"
+
+@app.on_event("startup")
+def startup_event():
+    try:
+        if not minio_client.bucket_exists(bucket_name):
+            minio_client.make_bucket(bucket_name)
+            print(f"Bucket '{bucket_name}' created.")
+        else:
+            print(f"Bucket '{bucket_name}' already exists.")
+    except S3Error as err:
+        print(f"Error occurred: {err}")
+
+@app.post("/upload/")
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        file_content = await file.read()
+        file_like_object = BytesIO(file_content)
+        
+        minio_client.put_object(
+            bucket_name,
+            file.filename,
+            file_like_object,
+            length=len(file_content),
+            content_type=file.content_type
         )
+        return {"message": f"File '{file.filename}' uploaded successfully."}
+    except S3Error as err:
+        raise HTTPException(status_code=500, detail=f"Error occurred: {err}")
 
-        # Prepare the response to send back to the client
-        response_headers = dict(minio_response.headers)
-        content = minio_response.content
-
-        return StreamingResponse(
-            content,
-            status_code=minio_response.status_code,
-            headers=response_headers
+@app.get("/download/{filename}")
+async def download_file(filename: str):
+    try:
+        # Download the file from MinIO
+        response = minio_client.get_object(bucket_name, filename)
+        
+        # Create a BytesIO object from the downloaded file content
+        file_content = response.read()
+        file_like_object = BytesIO(file_content)
+        
+        # Return the file as a response
+        return Response(
+            content=file_like_object.getvalue(),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    except S3Error as err:
+        raise HTTPException(status_code=500, detail=f"Error occurred: {err}")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"File '{filename}' not found.")
