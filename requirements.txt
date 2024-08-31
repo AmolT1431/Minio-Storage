@@ -2,3 +2,4 @@ httpx
 starlette
 uvicorn
 fastapi
+minio
