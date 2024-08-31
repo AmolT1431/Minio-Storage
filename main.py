@@ -7,7 +7,7 @@ app = FastAPI()
 
 # Initialize MinIO client
 minio_client = Minio(
-    "216.24.57.4:9000",
+    "minio-a1su.onrender.com:9000",
     access_key="atomictos",
     secret_key="amolt1431",
     secure=False
